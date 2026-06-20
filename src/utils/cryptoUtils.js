@@ -12,6 +12,12 @@ const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY ? Buffer.from(process.env.ENCR
  */
 function encrypt(text) {
   if (!text) return text;
+  
+  // If the text is already encrypted (matches "32_hex_chars:hex_chars"), don't encrypt again
+  if (/^[a-f0-9]{32}:[a-f0-9]+$/i.test(text)) {
+    return text;
+  }
+
   if (!ENCRYPTION_KEY) {
     console.warn('WARNING: ENCRYPTION_KEY is missing from .env. Storing as plain text.');
     return text;

@@ -1,0 +1,430 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             Int             @id @default(autoincrement())
+  name           String
+  email          String          @unique
+  password       String
+  role           String          @default("operator")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  passwordResets PasswordReset[]
+  refreshTokens  RefreshToken[]
+  sessions       Session[]
+
+  @@map("users")
+}
+
+model Role {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  permissions String   @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("roles")
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    Int      @map("user_id")
+  token     String   @unique @db.VarChar(700)
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId], map: "sessions_user_id_fkey")
+  @@map("sessions")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    Int      @map("user_id")
+  token     String   @unique @db.VarChar(700)
+  expiresAt DateTime @map("expires_at")
+  revoked   Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId], map: "refresh_tokens_user_id_fkey")
+  @@map("refresh_tokens")
+}
+
+model PasswordReset {
+  id        String   @id @default(uuid())
+  userId    Int      @map("user_id")
+  token     String   @unique @db.VarChar(500)
+  expiresAt DateTime @map("expires_at")
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId], map: "password_resets_user_id_fkey")
+  @@map("password_resets")
+}
+
+model Guest {
+  id            Int            @id @default(autoincrement())
+  name          String
+  phone         String
+  email         String?
+  loyaltyTier   String?        @map("loyalty_tier")
+  roomNumber    String?        @map("room_number")
+  pmsGuestId    String?        @map("pms_guest_id")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  spent         Float          @default(0)
+  status        String         @default("Regular")
+  visits        Int            @default(1)
+  conversations Conversation[]
+
+  @@map("guests")
+}
+
+model Conversation {
+  id              Int           @id @default(autoincrement())
+  guestId         Int           @map("guest_id")
+  status          String        @default("active")
+  aiEnabled       Boolean       @default(true) @map("ai_enabled")
+  confidenceScore Float         @default(1) @map("confidence_score")
+  lastMessage     String?       @map("last_message") @db.Text
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+  activityLogs    ActivityLog[]
+  guest           Guest         @relation(fields: [guestId], references: [id])
+  messages        Message[]
+  bookingState    BookingState?
+
+  @@index([guestId], map: "conversations_guest_id_fkey")
+  @@map("conversations")
+}
+
+model BookingState {
+  conversationId Int      @id @map("conversation_id")
+  checkInDate    DateTime? @map("check_in_date")
+  checkOutDate   DateTime? @map("check_out_date")
+  adults         Int?
+  children       Int?
+  roomType       String?  @map("room_type")
+  selectedRoomId String?  @map("selected_room_id")
+  selectedRateId String?  @map("selected_rate_id")
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@map("booking_states")
+}
+
+model Message {
+  id             Int          @id @default(autoincrement())
+  conversationId Int          @map("conversation_id")
+  senderType     String       @map("sender_type")
+  content        String       @db.Text
+  toolCalls      Json?        @map("tool_calls")
+  toolCallId     String?      @map("tool_call_id")
+  channel        String       @default("WhatsApp")
+  emailMessageId String?      @map("email_message_id")
+  emailInReplyTo String?      @map("email_in_reply_to")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+
+  @@index([conversationId], map: "messages_conversation_id_fkey")
+  @@map("messages")
+}
+
+model ActivityLog {
+  id             Int           @id @default(autoincrement())
+  conversationId Int?          @map("conversation_id")
+  actionType     String        @map("action_type")
+  actionDetails  String        @map("action_details") @db.Text
+  createdAt      DateTime      @default(now()) @map("created_at")
+  conversation   Conversation? @relation(fields: [conversationId], references: [id])
+
+  @@index([conversationId], map: "activity_logs_conversation_id_fkey")
+  @@map("activity_logs")
+}
+
+model OnboardingRequest {
+  id                String    @id @default(uuid())
+  requestId         String    @unique @map("request_id")
+  hotelName         String    @map("hotel_name")
+  contactName       String    @map("contact_name")
+  email             String
+  whatsapp          String?
+  pmsProvider       String    @map("pms_provider")
+  roomCount         String    @map("room_count")
+  plan              String    @default("Pro")
+  status            String    @default("Request Received")
+  specialist        String    @default("Unassigned")
+  integrationHealth String    @default("Pending") @map("integration_health")
+  notes             String?   @db.Text
+  createdAt         DateTime  @default(now()) @map("created_at")
+  onboardingToken   String?   @unique @map("onboarding_token")
+  pmsApiKey         String?   @map("pms_api_key") @db.Text
+  pmsSecret         String?   @map("pms_secret") @db.Text
+  smtpHost          String?   @map("smtp_host")
+  smtpPass          String?   @map("smtp_pass")
+  smtpUser          String?   @map("smtp_user")
+  tokenExpires      DateTime? @map("token_expires")
+  webhookUrl        String?   @map("webhook_url") @db.Text
+  whatsappApiKey    String?   @map("whatsapp_api_key") @db.Text
+  website           String?
+  hotelType         String?   @map("hotel_type")
+  uniqueHotelId     String?   @map("unique_hotel_id")
+  messages          String?   @db.Text
+  checklist         String?   @db.Text
+  timeline          String?   @db.Text
+  customizationReqs String?   @db.Text @map("customization_reqs")
+  sopDocuments      String?   @db.Text @map("sop_documents")
+
+  @@map("onboarding_requests")
+}
+
+model Hotel {
+  id                  Int      @id @default(autoincrement())
+  chatsToday          Int      @default(0) @map("chats_today")
+  aiProcessed         Int      @default(0) @map("ai_processed")
+  satisfaction        Float    @default(100)
+  escalations         Int      @default(0)
+  monthlyUsage        Float    @default(0) @map("monthly_usage")
+  pmsConnected        Boolean  @default(false) @map("pms_connected")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+  aiStatus            String   @default("Active") @map("ai_status")
+  createdBy           String?  @map("created_by")
+  emailConnected      Boolean  @default(false) @map("email_connected")
+  emailIntegrationType String  @default("SMTP") @map("email_integration_type")
+  hotelCode           String?  @map("hotel_code")
+  hotelEmail          String?  @map("hotel_email")
+  hotelName           String   @map("hotel_name")
+  hotelPhone          String?  @map("hotel_phone")
+  isPaused            Boolean  @default(false) @map("is_paused")
+  knowledgeBaseStatus String   @default("Pending") @map("knowledge_base_status")
+  onboardingStatus    String   @default("Completed") @map("onboarding_status")
+  pmsProvider         String?  @map("pms_provider")
+  subscriptionPlan    String   @default("Standard") @map("subscription_plan")
+  totalRooms          Int      @default(0) @map("total_rooms")
+  whatsappConnected   Boolean  @default(false) @map("whatsapp_connected")
+  whatsappApiKey      String?  @map("whatsapp_api_key") @db.Text
+  whatsappPhoneId     String?  @map("whatsapp_phone_id")
+  whatsappAppSecret   String?  @map("whatsapp_app_secret") @db.Text
+  whatsappVerifyToken String?  @map("whatsapp_verify_token")
+  whatsappHealthStatus String  @default("ok") @map("whatsapp_health_status")
+  whatsappHealthNote  String?  @map("whatsapp_health_note") @db.Text
+  smtpHost            String?  @map("smtp_host")
+  smtpPort            Int?     @map("smtp_port")
+  smtpUser            String?  @map("smtp_user")
+  smtpPass            String?  @map("smtp_pass")
+  pmsApiKey           String?  @map("pms_api_key") @db.Text
+  pmsSecret           String?  @map("pms_secret") @db.Text
+  pmsBaseUrl          String?  @map("pms_base_url") @db.Text
+  workflows           Workflow[]
+  knowledgeDocs       KnowledgeDocument[]
+  settings            HotelSettings?
+  services            HotelService[]
+
+  @@map("hotels")
+}
+
+model SystemSettings {
+  id                   Int      @id @default(1)
+  globalAutomation     Boolean  @default(true) @map("global_automation")
+  confidenceThreshold  Int      @default(85) @map("confidence_threshold")
+  humanTakeoverEnabled Boolean  @default(true) @map("human_takeover_enabled")
+  escalationThreshold  Int      @default(65) @map("escalation_threshold")
+  billingWaiverLimit   Float    @default(30) @map("billing_waiver_limit")
+  occupancyTrigger     Int      @default(90) @map("occupancy_trigger")
+  systemAlertsEnabled  Boolean  @default(true) @map("system_alerts_enabled")
+  pushAlertsEnabled    Boolean  @default(true) @map("push_alerts_enabled")
+  communicationVoice   String   @default("Warm & Professional") @map("communication_voice")
+  defaultLanguage      String   @default("Auto-Detect Multilingual") @map("default_language")
+  messageSignature     String   @default("Sincerely, the Guest Relations Team") @map("message_signature")
+  lateCheckoutLimit    String   @default("2:00 PM") @map("late_checkout_limit")
+  roomUpgradeLimit     String   @default("Standard Rooms Only") @map("room_upgrade_limit")
+  vipEscalationRoute   String   @default("Front Desk Manager") @map("vip_escalation_route")
+  refundEscalationRoute String  @default("Supervisor") @map("refund_escalation_route")
+  sentimentEscalationRoute String @default("Human Takeover") @map("sentiment_escalation_route")
+  confidenceEscalationRoute String @default("Takeover Queue") @map("confidence_escalation_route")
+  shiftPagingEnabled   Boolean  @default(false) @map("shift_paging_enabled")
+  nightDutyEnabled     Boolean  @default(true) @map("night_duty_enabled")
+  emergencyChannel     String   @default("High Priority Page") @map("emergency_channel")
+  enforceComplexRules  Boolean  @default(true) @map("enforce_complex_rules")
+  mfaEnabled           Boolean  @default(false) @map("mfa_enabled")
+  sessionTimeout       String   @default("8 Hours") @map("session_timeout")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  @@map("system_settings")
+}
+
+model Plan {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  price     Float
+  duration  String   @default("Monthly")
+  features  String   @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("plans")
+}
+
+model BillingHistory {
+  id        Int      @id @default(autoincrement())
+  reference String   @unique
+  hotelName String   @map("hotel_name")
+  amount    Float
+  status    String   @default("Paid")
+  date      DateTime @default(now())
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("billing_history")
+}
+
+model Workflow {
+  id                  Int      @id @default(autoincrement())
+  hotelId             Int      @map("hotel_id")
+  name                String
+  purpose             String   @db.Text
+  channel             String   @default("WhatsApp")
+  policySource        String   @map("policy_source")
+  escalationTrigger   String   @map("escalation_trigger")
+  status              String   @default("Active")
+  autoApproveLimit    String?  @map("auto_approve_limit")
+  occupancyThreshold  String?  @map("occupancy_threshold")
+  loyaltyRequired     String?  @map("loyalty_required")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+  hotel               Hotel    @relation(fields: [hotelId], references: [id])
+
+  @@index([hotelId], map: "workflows_hotel_id_fkey")
+  @@map("workflows")
+}
+
+model KnowledgeDocument {
+  id             Int      @id @default(autoincrement())
+  hotelId        Int      @map("hotel_id")
+  filename       String
+  fileUrl        String   @map("file_url")
+  docType        String   @map("doc_type")
+  rawText        String?  @db.LongText @map("raw_text")
+  isVectorized   Boolean  @default(false) @map("is_vectorized")
+  vectorCount    Int      @default(0) @map("vector_count")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  hotel          Hotel    @relation(fields: [hotelId], references: [id])
+
+  @@index([hotelId], map: "knowledge_documents_hotel_id_fkey")
+  @@map("knowledge_documents")
+}
+
+model HotelSettings {
+  hotelId      Int      @id @map("hotel_id")
+  currencyCode String   @default("USD") @map("currency_code")
+  timezone     String   @default("UTC")
+  language     String   @default("en")
+  hotel        Hotel    @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+
+  @@map("hotel_settings")
+}
+
+model HotelService {
+  id            Int     @id @default(autoincrement())
+  hotelId       Int     @map("hotel_id")
+  mewsServiceId String  @map("mews_service_id")
+  name          String
+  category      String
+  active        Boolean @default(true)
+  hotel         Hotel   @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  
+  @@unique([hotelId, mewsServiceId])
+  @@index([hotelId, category])
+  @@map("hotel_services")
+}
+
+model BookingLock {
+  id        String   @id @default(uuid())
+  hotelId   Int      @map("hotel_id")
+  serviceId String   @map("service_id")
+  startDate DateTime @map("start_date")
+  endDate   DateTime @map("end_date")
+  expiresAt DateTime @map("expires_at")
+  
+  @@unique([hotelId, serviceId, startDate, endDate])
+  @@index([expiresAt])
+  @@map("booking_locks")
+}
+
+model ToolExecutionLog {
+  toolCallId      String   @id @map("tool_call_id")
+  conversationId  Int      @map("conversation_id")
+  mewsRequestId   String?  @unique @map("mews_request_id")
+  hotelId         Int      @map("hotel_id")
+  guestId         Int      @map("guest_id")
+  toolName        String   @map("tool_name")
+  requestPayload  String   @db.Text @map("request_payload")
+  responsePayload String?  @db.Text @map("response_payload")
+  status          String   // "PENDING", "SUCCESS", "FAILED"
+  mewsEntityId    String?  @map("mews_entity_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  
+  @@index([status, createdAt])
+  @@map("tool_execution_logs")
+}
+
+model ReservationCache {
+  id            String   @id // Mews Reservation ID
+  hotelId       Int      @map("hotel_id")
+  guestId       Int      @map("guest_id")
+  pmsGuestId    String   @map("pms_guest_id")
+  payload       String   @db.Text // Full Mews reservation object
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  
+  @@index([hotelId, guestId])
+  @@map("reservation_caches")
+}
+
+model PaymentTransactionLog {
+  id             String   @id @default(uuid())
+  toolCallId     String   @unique @map("tool_call_id")
+  hotelId        Int      @map("hotel_id")
+  guestId        Int      @map("guest_id")
+  amount         Float
+  currency       String
+  status         String   // "REQUESTED", "PAID", "FAILED"
+  mewsPaymentId  String?  @map("mews_payment_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+  
+  @@map("payment_transaction_logs")
+}
+
+model TransactionStateLog {
+  id             String   @id @default(uuid())
+  toolCallId     String   @unique @map("tool_call_id")
+  mewsRequestId  String?  @map("mews_request_id")
+  payloadHash    String   @db.VarChar(255) @map("payload_hash")
+  category       String   // "BOOKING", "PAYMENT", "CANCELLATION"
+  state          String   // "PRE_FLIGHT", "MEWS_EXECUTED", "DB_COMMITTED", "AMBIGUOUS"
+  retryCount     Int      @default(0) @map("retry_count")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  
+  @@index([payloadHash, createdAt])
+  @@index([state])
+  @@map("transaction_state_logs")
+}
+
+model AuditCorrectionLog {
+  id               Int      @id @default(autoincrement())
+  toolCallId       String   @map("tool_call_id")
+  correctionReason String   @db.Text @map("correction_reason")
+  originalState    String   @map("original_state")
+  newState         String   @map("new_state")
+  createdAt        DateTime @default(now()) @map("created_at")
+  
+  @@map("audit_correction_logs")
+}

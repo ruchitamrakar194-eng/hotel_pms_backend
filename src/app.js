@@ -23,6 +23,9 @@ const errorMiddleware = require('./middleware/errorMiddleware');
 
 const app = express();
 
+// Enable trusting the proxy headers when deployed behind reverse proxies (e.g. Railway)
+app.set('trust proxy', 1);
+
 // Security Middleware
 app.use(helmet());
 app.use(cors({

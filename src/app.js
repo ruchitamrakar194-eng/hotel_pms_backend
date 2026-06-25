@@ -29,7 +29,11 @@ app.set('trust proxy', 1);
 // Security Middleware
 app.use(helmet());
 app.use(cors({
-  origin: true,
+  origin: [
+    "https://hotel-pms-new.netlify.app",
+    "http://localhost:5137",
+    "http://localhost:5174"
+  ],
   credentials: true
 }));
 

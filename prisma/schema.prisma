@@ -219,6 +219,11 @@ model Hotel {
   smtpPort            Int?     @map("smtp_port")
   smtpUser            String?  @map("smtp_user")
   smtpPass            String?  @map("smtp_pass")
+  imapHost            String?  @map("imap_host")
+  imapPort            Int?     @map("imap_port")
+  imapUser            String?  @map("imap_user")
+  imapPass            String?  @map("imap_pass")
+  imapTls             Boolean  @default(true) @map("imap_tls")
   pmsApiKey           String?  @map("pms_api_key") @db.Text
   pmsSecret           String?  @map("pms_secret") @db.Text
   pmsBaseUrl          String?  @map("pms_base_url") @db.Text
@@ -427,4 +432,15 @@ model AuditCorrectionLog {
   createdAt        DateTime @default(now()) @map("created_at")
   
   @@map("audit_correction_logs")
+}
+
+model ProcessedEmail {
+  id             Int      @id @default(autoincrement())
+  hotelId        Int      @map("hotel_id")
+  identifierType String   @map("identifier_type") // e.g., "MESSAGE_ID", "UID", "HASH"
+  identifier     String   
+  processedAt    DateTime @default(now()) @map("processed_at")
+
+  @@unique([hotelId, identifier])
+  @@map("processed_emails")
 }

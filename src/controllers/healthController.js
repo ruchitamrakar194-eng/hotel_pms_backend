@@ -22,6 +22,27 @@ const checkHealth = asyncHandler(async (req, res) => {
   });
 });
 
+const checkImapHealth = asyncHandler(async (req, res) => {
+  const imapService = require('../services/imapService');
+  const activeHotels = await prisma.hotel.findMany({
+    where: { imapHost: { not: null } },
+    select: { id: true, hotelName: true }
+  });
+
+  const statuses = activeHotels.map(hotel => ({
+    hotelId: hotel.id,
+    hotelName: hotel.hotelName,
+    ...imapService.getStats(hotel.id)
+  }));
+
+  return sendSuccess(res, 200, {
+    message: "IMAP Listeners Status",
+    totalConfigured: activeHotels.length,
+    listeners: statuses
+  });
+});
+
 module.exports = {
-  checkHealth
+  checkHealth,
+  checkImapHealth
 };

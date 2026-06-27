@@ -3,14 +3,18 @@ const asyncHandler = require('../middleware/asyncHandler');
 const { sendSuccess } = require('../utils/responseHandler');
 const { encrypt } = require('../utils/cryptoUtils');
 
-const encryptSecrets = (data) => {
-  if (data.pmsApiKey) data.pmsApiKey = encrypt(data.pmsApiKey);
-  if (data.pmsSecret) data.pmsSecret = encrypt(data.pmsSecret);
-  if (data.whatsappApiKey) data.whatsappApiKey = encrypt(data.whatsappApiKey);
-  if (data.whatsappAppSecret) data.whatsappAppSecret = encrypt(data.whatsappAppSecret);
-  if (data.smtpPass) data.smtpPass = encrypt(data.smtpPass);
+const encryptSecrets = (data, existingHotel = {}) => {
+  if (data.pmsApiKey && data.pmsApiKey !== existingHotel.pmsApiKey) data.pmsApiKey = encrypt(data.pmsApiKey);
+  if (data.pmsSecret && data.pmsSecret !== existingHotel.pmsSecret) data.pmsSecret = encrypt(data.pmsSecret);
+  if (data.whatsappApiKey && data.whatsappApiKey !== existingHotel.whatsappApiKey) data.whatsappApiKey = encrypt(data.whatsappApiKey);
+  if (data.whatsappAppSecret && data.whatsappAppSecret !== existingHotel.whatsappAppSecret) data.whatsappAppSecret = encrypt(data.whatsappAppSecret);
+  if (data.smtpPass && data.smtpPass !== existingHotel.smtpPass) data.smtpPass = encrypt(data.smtpPass);
+  if (data.imapPass && data.imapPass !== existingHotel.imapPass) data.imapPass = encrypt(data.imapPass);
   if (data.smtpPort !== undefined && data.smtpPort !== null) {
     data.smtpPort = parseInt(data.smtpPort, 10);
+  }
+  if (data.imapPort !== undefined && data.imapPort !== null) {
+    data.imapPort = parseInt(data.imapPort, 10);
   }
   // Reset health status on config update
   if (data.whatsappApiKey || data.whatsappAppSecret || data.whatsappPhoneId || data.whatsappVerifyToken) {
@@ -48,12 +52,24 @@ const createHotel = asyncHandler(async (req, res) => {
 
 const updateHotel = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const updates = encryptSecrets(req.body);
+
+  // Optionally, validate IMAP/SMTP here if credentials are provided in req.body
+  // Since this is a simple update, we just encrypt.
+  const existingHotel = await prisma.hotel.findUnique({ where: { id: parseInt(id) } });
+  if (!existingHotel) return res.status(404).json({ success: false, message: 'Hotel not found' });
+  const updates = encryptSecrets(req.body, existingHotel);
   
   const hotel = await prisma.hotel.update({
     where: { id: parseInt(id) },
     data: updates
   });
+
+  // If IMAP credentials were changed, restart listener
+  if (req.body.imapHost && req.body.imapUser && req.body.imapPass) {
+      const imapService = require('../services/imapService');
+      imapService.startListener(hotel); // Will connect using the new credentials
+  }
+
   return sendSuccess(res, 200, hotel);
 });
 
@@ -81,12 +97,36 @@ const updateHotelSettings = asyncHandler(async (req, res) => {
     return res.status(404).json({ success: false, message: 'Hotel not found' });
   }
   
-  const updates = encryptSecrets(req.body);
+  // Validate IMAP / SMTP if provided
+  if (req.body.imapHost && req.body.imapUser && req.body.imapPass) {
+    const { ImapFlow } = require('imapflow');
+    try {
+      const client = new ImapFlow({
+        host: req.body.imapHost,
+        port: parseInt(req.body.imapPort) || 993,
+        secure: req.body.imapTls !== false,
+        auth: { user: req.body.imapUser, pass: req.body.imapPass },
+        logger: false
+      });
+      await client.connect();
+      await client.logout();
+    } catch (error) {
+      return res.status(400).json({ success: false, message: 'IMAP Authentication Failed: ' + error.message });
+    }
+  }
+
+  const updates = encryptSecrets(req.body, hotel);
   const updatedHotel = await prisma.hotel.update({
     where: { id: hotel.id },
     data: updates
   });
   
+  // If IMAP credentials were changed, restart listener
+  if (req.body.imapHost && req.body.imapUser && req.body.imapPass) {
+      const imapService = require('../services/imapService');
+      imapService.startListener(updatedHotel);
+  }
+
   return sendSuccess(res, 200, updatedHotel);
 });
 

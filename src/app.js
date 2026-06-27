@@ -32,6 +32,7 @@ app.use(cors({
   origin: [
     "https://hotel-pms-new.netlify.app",
     "http://localhost:5137",
+    "http://localhost:5173",
     "http://localhost:5174"
   ],
   credentials: true

@@ -178,6 +178,11 @@ class AutomationEngine {
         await conversationService.logActivity(conversation.id, 'AI Response', `Tool Used: ${decision.tool || 'none'}`);
         
         return { success: true, response: decision.response, automated: true };
+      } else if (decision.action === 'ignore') {
+        console.log(`[AutomationEngine] Ignored message from ${senderIdentity}. Reason: ${decision.reason}`);
+        await conversationService.logActivity(conversation.id, 'Ignored Message', `Reason: ${decision.reason}`);
+        // Do not send an email or WhatsApp response
+        return { success: true, message: 'Message ignored (spam/unrelated)', automated: true };
       } else {
         await conversationService.updateStatus(conversation.id, 'escalated', 0);
         await conversationService.logActivity(conversation.id, 'Escalation', `Reason: ${decision.reason}`);
@@ -246,6 +251,7 @@ class AutomationEngine {
       { type: "function", function: { name: "send_payment_link", description: "Generate payment link.", parameters: { type: "object", properties: { amount: { type: "number" } }, required: ["amount"] } } },
       { type: "function", function: { name: "amend_payment", description: "Amend a payment.", parameters: { type: "object", properties: { paymentId: { type: "string" } }, required: ["paymentId"] } } },
       { type: "function", function: { name: "post_charge", description: "Post a charge.", parameters: { type: "object", properties: { serviceId: { type: "string" }, amount: { type: "number" } }, required: ["serviceId", "amount"] } } },
+      { type: "function", function: { name: "ignore_message", description: "Ignore the message entirely and do not send a reply. Use this for spam, promotional emails, completely unrelated conversational statements, or automated system notifications.", parameters: { type: "object", properties: { reason: { type: "string" } }, required: ["reason"] } } },
       {
         type: "function",
         function: {
@@ -293,6 +299,9 @@ OPERATIONS (Category B):
 
 ESCALATION (Category C):
 - Escalate to a human agent for disputes, refunds, complex complaints, or anything requiring management approval.
+
+SPAM & UNRELATED (Category D):
+- If the incoming message is clearly spam, promotional (e.g. from LinkedIn, newsletters), an automated system notification (e.g. Supabase, alerts), or completely unrelated to hotel operations and requires no conversational response, ALWAYS call the ignore_message tool to silently drop it. Do not attempt to reply to these.
 
 ALWAYS respond in a warm, professional, concise hotel concierge tone. Use the information from tools to give confident, direct answers.
 ${activeBookingStateText}`;
@@ -387,6 +396,10 @@ ${activeBookingStateText}`;
 
         if (functionName === "escalate_to_human") {
           return { action: 'escalate', reason: functionArgs.reason || 'Escalated by AI' };
+        }
+
+        if (functionName === "ignore_message") {
+          return { action: 'ignore', reason: functionArgs.reason || 'Ignored by AI (Spam/Unrelated)' };
         }
 
         if (!ALLOWLIST.includes(functionName)) {

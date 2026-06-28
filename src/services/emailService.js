@@ -119,9 +119,12 @@ class EmailService {
           });
           fromEmail = `"${hotel.hotelName || 'Hotel Guest Services'}" <${hotel.smtpUser}>`;
           console.log(`[EMAIL DISPATCH] Using database SMTP configuration for Hotel ${hotelId} (${hotel.smtpUser})`);
+        } else {
+          throw new Error("Incomplete SMTP credentials in database.");
         }
       } catch (err) {
-        console.error(`[EMAIL DISPATCH] Failed to initialize hotel-specific SMTP transporter for Hotel ${hotelId}, falling back to default:`, err.message);
+        console.error(`[EMAIL DISPATCH] Failed to initialize hotel-specific SMTP transporter for Hotel ${hotelId}:`, err.message);
+        throw new Error(`Cannot send guest email: ${err.message}`);
       }
     }
 

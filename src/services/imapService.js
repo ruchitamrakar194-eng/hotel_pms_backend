@@ -114,7 +114,7 @@ class ImapService {
 
       // 2. Start listening for new emails (Poll every 15 seconds)
       const pollMailbox = async () => {
-        if (this.shuttingDown || !this.connections.has(hotel.id)) return;
+        if (this.shuttingDown || this.connections.get(hotel.id) !== client) return;
         try {
           console.log(`[IMAP] Polling mailbox for Hotel ${hotel.id}...`);
           // Send a NOOP to keep connection alive and check for updates

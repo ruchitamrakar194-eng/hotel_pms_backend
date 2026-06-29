@@ -102,23 +102,42 @@ class EmailService {
 
     if (hotelId) {
       try {
-        const { PrismaClient } = require('@prisma/client');
-        const prisma = new PrismaClient();
+        if (!this.hotelTransporters) {
+          this.hotelTransporters = new Map();
+        }
+
+        const prisma = require('../config/prisma');
         const hotel = await prisma.hotel.findUnique({ where: { id: Number(hotelId) } });
         if (hotel && hotel.smtpHost && hotel.smtpUser && hotel.smtpPass) {
-          const { decrypt } = require('../utils/cryptoUtils');
-          const decryptedPassword = decrypt(hotel.smtpPass);
-          activeTransporter = nodemailer.createTransport({
-            host: hotel.smtpHost,
-            port: Number(hotel.smtpPort) || 587,
-            secure: Number(hotel.smtpPort) === 465,
-            auth: {
-              user: hotel.smtpUser,
-              pass: decryptedPassword,
-            },
-          });
+          const cacheKey = `${hotel.id}_${hotel.smtpHost}_${hotel.smtpUser}`;
+          if (this.hotelTransporters.has(cacheKey)) {
+            activeTransporter = this.hotelTransporters.get(cacheKey);
+          } else {
+            const { decrypt } = require('../utils/cryptoUtils');
+            const decryptedPassword = decrypt(hotel.smtpPass);
+            const portNum = Number(hotel.smtpPort) || 587;
+            
+            activeTransporter = nodemailer.createTransport({
+              pool: true, // Reuse SMTP connection pool to prevent timeouts
+              maxConnections: 5,
+              maxMessages: 100,
+              host: hotel.smtpHost,
+              port: portNum,
+              secure: portNum === 465, // True for 465, false for other ports like 587
+              auth: {
+                user: hotel.smtpUser,
+                pass: decryptedPassword,
+              },
+              tls: {
+                rejectUnauthorized: false
+              }
+            });
+
+            this.hotelTransporters.set(cacheKey, activeTransporter);
+          }
+
           fromEmail = `"${hotel.hotelName || 'Hotel Guest Services'}" <${hotel.smtpUser}>`;
-          console.log(`[EMAIL DISPATCH] Using database SMTP configuration for Hotel ${hotelId} (${hotel.smtpUser})`);
+          console.log(`[EMAIL DISPATCH] Using pooled database SMTP configuration for Hotel ${hotelId} (${hotel.smtpUser})`);
         } else {
           throw new Error("Incomplete SMTP credentials in database.");
         }

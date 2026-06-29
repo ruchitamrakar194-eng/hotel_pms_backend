@@ -175,8 +175,9 @@ class EmailService {
       if (hotelConfig) {
         const altPort = hotelConfig.port === 465 ? 587 : 465;
         console.log(`[EMAIL DISPATCH] Retrying direct Titan SMTP via alternate port ${altPort} (secure: ${altPort === 465})...`);
+        let altTransporter = null;
         try {
-          const altTransporter = nodemailer.createTransport({
+          altTransporter = nodemailer.createTransport({
             host: hotelConfig.host,
             port: altPort,
             secure: altPort === 465,

@@ -99,6 +99,7 @@ class EmailService {
   async sendGuestEmail(to, subject, htmlBody, references = null, inReplyTo = null, hotelId = null) {
     let activeTransporter = this.transporter;
     let fromEmail = process.env.HOTEL_EMAIL_FROM || '"Hotel Guest Services" <guestservices@autopilot.ai>';
+    let hotelConfig = null;
 
     if (hotelId) {
       try {
@@ -109,21 +110,32 @@ class EmailService {
         const prisma = require('../config/prisma');
         const hotel = await prisma.hotel.findUnique({ where: { id: Number(hotelId) } });
         if (hotel && hotel.smtpHost && hotel.smtpUser && hotel.smtpPass) {
-          const cacheKey = `${hotel.id}_${hotel.smtpHost}_${hotel.smtpUser}`;
+          const { decrypt } = require('../utils/cryptoUtils');
+          const decryptedPassword = decrypt(hotel.smtpPass);
+          const portNum = Number(hotel.smtpPort) || 587;
+          
+          hotelConfig = {
+            host: hotel.smtpHost,
+            port: portNum,
+            user: hotel.smtpUser,
+            pass: decryptedPassword,
+            hotelName: hotel.hotelName
+          };
+
+          const cacheKey = `${hotel.id}_${hotel.smtpHost}_${hotel.smtpUser}_${portNum}`;
           if (this.hotelTransporters.has(cacheKey)) {
             activeTransporter = this.hotelTransporters.get(cacheKey);
           } else {
-            const { decrypt } = require('../utils/cryptoUtils');
-            const decryptedPassword = decrypt(hotel.smtpPass);
-            const portNum = Number(hotel.smtpPort) || 587;
-            
             activeTransporter = nodemailer.createTransport({
-              pool: true, // Reuse SMTP connection pool to prevent timeouts
-              maxConnections: 5,
-              maxMessages: 100,
+              pool: true,
+              maxConnections: 3,
+              maxMessages: 50,
               host: hotel.smtpHost,
               port: portNum,
-              secure: portNum === 465, // True for 465, false for other ports like 587
+              secure: portNum === 465,
+              connectionTimeout: 10000, // 10 sec connection timeout
+              greetingTimeout: 10000,   // 10 sec greeting timeout
+              socketTimeout: 20000,     // 20 sec socket timeout
               auth: {
                 user: hotel.smtpUser,
                 pass: decryptedPassword,
@@ -137,7 +149,7 @@ class EmailService {
           }
 
           fromEmail = `"${hotel.hotelName || 'Hotel Guest Services'}" <${hotel.smtpUser}>`;
-          console.log(`[EMAIL DISPATCH] Using pooled database SMTP configuration for Hotel ${hotelId} (${hotel.smtpUser})`);
+          console.log(`[EMAIL DISPATCH] Using database SMTP configuration for Hotel ${hotelId} (${hotel.smtpUser}:${portNum})`);
         } else {
           throw new Error("Incomplete SMTP credentials in database.");
         }
@@ -166,7 +178,40 @@ class EmailService {
       console.log(`[EMAIL DISPATCH] Guest email sent to ${to}. Subject: ${subject}`);
       return info;
     } catch (error) {
-      console.error('Guest Email Dispatch Error:', error);
+      console.error('Guest Email Dispatch Error:', error.message);
+      
+      // Fallback: If connection timed out (e.g. cloud firewall blocking port 587 or pooled connection drop), retry with direct connection or alternative port 465
+      if (hotelConfig && (error.code === 'ETIMEDOUT' || error.code === 'ECONNREFUSED' || error.command === 'CONN')) {
+        console.log(`[EMAIL DISPATCH] Attempting SMTP fallback dispatch for ${hotelConfig.user}...`);
+        try {
+          // Fallback 1: Direct non-pooled transport on configured port
+          const fallbackPort = hotelConfig.port === 587 ? 465 : 587;
+          console.log(`[EMAIL DISPATCH] Retrying with fallback port ${fallbackPort} (secure: ${fallbackPort === 465})...`);
+          const fallbackTransporter = nodemailer.createTransport({
+            pool: false, // Direct connection
+            host: hotelConfig.host,
+            port: fallbackPort,
+            secure: fallbackPort === 465,
+            connectionTimeout: 15000,
+            greetingTimeout: 15000,
+            socketTimeout: 25000,
+            auth: {
+              user: hotelConfig.user,
+              pass: hotelConfig.pass,
+            },
+            tls: {
+              rejectUnauthorized: false
+            }
+          });
+
+          const info = await fallbackTransporter.sendMail(mailOptions);
+          console.log(`[EMAIL DISPATCH] Fallback email successfully sent to ${to}!`);
+          return info;
+        } catch (fallbackError) {
+          console.error('[EMAIL DISPATCH] Fallback SMTP attempt also failed:', fallbackError.message);
+        }
+      }
+
       throw error;
     }
   }

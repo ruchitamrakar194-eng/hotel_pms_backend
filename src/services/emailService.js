@@ -133,9 +133,10 @@ class EmailService {
               host: hotel.smtpHost,
               port: portNum,
               secure: portNum === 465,
-              connectionTimeout: 10000, // 10 sec connection timeout
-              greetingTimeout: 10000,   // 10 sec greeting timeout
-              socketTimeout: 20000,     // 20 sec socket timeout
+              family: 4, // Force IPv4 to prevent cloud container IPv6 connection timeouts
+              connectionTimeout: 10000,
+              greetingTimeout: 10000,
+              socketTimeout: 20000,
               auth: {
                 user: hotel.smtpUser,
                 pass: decryptedPassword,
@@ -184,14 +185,14 @@ class EmailService {
       if (hotelConfig && (error.code === 'ETIMEDOUT' || error.code === 'ECONNREFUSED' || error.command === 'CONN')) {
         console.log(`[EMAIL DISPATCH] Attempting SMTP fallback dispatch for ${hotelConfig.user}...`);
         try {
-          // Fallback 1: Direct non-pooled transport on configured port
           const fallbackPort = hotelConfig.port === 587 ? 465 : 587;
-          console.log(`[EMAIL DISPATCH] Retrying with fallback port ${fallbackPort} (secure: ${fallbackPort === 465})...`);
+          console.log(`[EMAIL DISPATCH] Retrying with IPv4 fallback port ${fallbackPort} (secure: ${fallbackPort === 465})...`);
           const fallbackTransporter = nodemailer.createTransport({
             pool: false, // Direct connection
             host: hotelConfig.host,
             port: fallbackPort,
             secure: fallbackPort === 465,
+            family: 4, // Force IPv4
             connectionTimeout: 15000,
             greetingTimeout: 15000,
             socketTimeout: 25000,

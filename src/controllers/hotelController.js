@@ -100,12 +100,20 @@ const updateHotelSettings = asyncHandler(async (req, res) => {
   // Validate IMAP / SMTP if provided
   if (req.body.imapHost && req.body.imapUser && req.body.imapPass) {
     const { ImapFlow } = require('imapflow');
+    const { decrypt } = require('../utils/cryptoUtils');
+    
+    // If the frontend sent the exact encrypted hash from the database, decrypt it so we can test the connection
+    let passToTest = req.body.imapPass;
+    if (passToTest === hotel.imapPass) {
+      passToTest = decrypt(passToTest);
+    }
+
     try {
       const client = new ImapFlow({
         host: req.body.imapHost,
         port: parseInt(req.body.imapPort) || 993,
         secure: req.body.imapTls !== false,
-        auth: { user: req.body.imapUser, pass: req.body.imapPass },
+        auth: { user: req.body.imapUser, pass: passToTest },
         logger: false
       });
       await client.connect();

@@ -99,7 +99,7 @@ class EmailService {
   async sendGuestEmail(to, subject, htmlBody, references = null, inReplyTo = null, hotelId = null) {
     let activeTransporter = this.transporter;
     let fromEmail = process.env.HOTEL_EMAIL_FROM || '"Hotel Guest Services" <guestservices@autopilot.ai>';
-    let isHotelSpecific = false;
+    let hotelConfig = null;
 
     if (hotelId) {
       try {
@@ -109,10 +109,16 @@ class EmailService {
           const { decrypt } = require('../utils/cryptoUtils');
           const decryptedPassword = decrypt(hotel.smtpPass);
           const portNum = Number(hotel.smtpPort) || 465;
-          isHotelSpecific = true;
           
+          hotelConfig = {
+            host: hotel.smtpHost,
+            port: portNum,
+            user: hotel.smtpUser,
+            pass: decryptedPassword,
+            hotelName: hotel.hotelName
+          };
+
           activeTransporter = nodemailer.createTransport({
-            pool: false, // Fresh direct connection per email to prevent zombie pooled socket timeouts
             host: hotel.smtpHost,
             port: portNum,
             secure: portNum === 465,
@@ -124,7 +130,9 @@ class EmailService {
               user: hotel.smtpUser,
               pass: decryptedPassword,
             },
+            authMethod: 'LOGIN',
             tls: {
+              servername: hotel.smtpHost,
               rejectUnauthorized: false
             }
           });
@@ -157,15 +165,46 @@ class EmailService {
     try {
       const info = await activeTransporter.sendMail(mailOptions);
       console.log(`[EMAIL DISPATCH] Guest email sent successfully to ${to}. Subject: ${subject}`);
-      if (isHotelSpecific && activeTransporter.close) {
-        activeTransporter.close();
-      }
+      if (hotelConfig && activeTransporter.close) activeTransporter.close();
       return info;
     } catch (error) {
-      console.error('Guest Email Dispatch Error:', error.message);
-      if (isHotelSpecific && activeTransporter.close) {
-        activeTransporter.close();
+      console.error(`[EMAIL DISPATCH] Primary SMTP attempt failed (${error.message}). Checking fallback...`);
+      if (hotelConfig && activeTransporter.close) activeTransporter.close();
+
+      // If primary port timed out, try alternate Titan SMTP port (if 465 failed, try 587 and vice-versa)
+      if (hotelConfig) {
+        const altPort = hotelConfig.port === 465 ? 587 : 465;
+        console.log(`[EMAIL DISPATCH] Retrying direct Titan SMTP via alternate port ${altPort} (secure: ${altPort === 465})...`);
+        try {
+          const altTransporter = nodemailer.createTransport({
+            host: hotelConfig.host,
+            port: altPort,
+            secure: altPort === 465,
+            family: 4,
+            connectionTimeout: 15000,
+            greetingTimeout: 15000,
+            socketTimeout: 30000,
+            auth: {
+              user: hotelConfig.user,
+              pass: hotelConfig.pass,
+            },
+            authMethod: 'LOGIN',
+            tls: {
+              servername: hotelConfig.host,
+              rejectUnauthorized: false
+            }
+          });
+
+          const info = await altTransporter.sendMail(mailOptions);
+          console.log(`[EMAIL DISPATCH] Alternate port ${altPort} SMTP email successfully sent to ${to}!`);
+          if (altTransporter.close) altTransporter.close();
+          return info;
+        } catch (altError) {
+          console.error(`[EMAIL DISPATCH] Alternate port ${altPort} SMTP attempt failed:`, altError.message);
+          if (altTransporter && altTransporter.close) altTransporter.close();
+        }
       }
+
       throw error;
     }
   }
